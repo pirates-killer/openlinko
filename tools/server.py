@@ -1227,7 +1227,9 @@ def demo_month(y, m, ndays):
         days.append({"d": d, "km": km, "kwh": kwh, "eff": eff, "kwh_hu": round(kwh + rg, 1),
                      "eff_hu": round((kwh + rg) / km * 100, 1) if eff else None, "regen": rg,
                      "chg_kwh": ck, "chg_cost": round(ck / 0.92 * TARIFF_IDR) if chg else 0,
-                     "trips": [{"from": "07:40", "to": "08:25", "km": km, "min": 45}] if km else [],
+                     "trips": [{"from": "07:40", "to": "08:25", "km": km, "min": 45,
+                                "start_ts": int(time.mktime((y, m, d, 7, 40, 0, 0, 0, -1))),
+                                "end_ts": int(time.mktime((y, m, d, 8, 25, 0, 0, 0, -1)))}] if km else [],
                      "charges": [{"at": "19:10", "kwh": ck, "cost": round(ck / 0.92 * TARIFF_IDR),
                                   "soc0": 34, "soc1": 88, "min": 38, "avg_kw": 48.5}] if chg else []})
     ok = [x for x in days if x["eff"] is not None]
@@ -1647,7 +1649,8 @@ def month_history(month):
     trips_day = {}                                      # day -> outings (fold_outings), oldest first
     for o in fold_outings(trips):
         k = time.strftime("%Y-%m-%d", time.localtime(o["start_ts"]))
-        trips_day.setdefault(k, []).append({x: o[x] for x in ("from", "to", "km", "min")})
+        # start_ts/end_ts: so a calendar day's drive can open its route (/api/route) when location is on
+        trips_day.setdefault(k, []).append({x: o[x] for x in ("from", "to", "km", "min", "start_ts", "end_ts")})
     fr = [(ts, d2.get("battery"), d2.get("odometer")) for ts, dt2, d2 in data
           if d2.get("battery") is not None and d2.get("odometer") is not None]
     sess = build_sessions(fr, t1)

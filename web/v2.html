@@ -416,11 +416,18 @@
     color:#fff;font:800 11px/1 system-ui,sans-serif;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}
   .lochead{margin:var(--s6) 2px var(--s3);font-size:12.5px;font-weight:700;color:var(--mut);
     text-transform:uppercase;letter-spacing:.05em}
-  :root[data-theme="dark"] #locMap .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.9)}
+  /* the day's routes inside a Distance calendar card (location on) */
+  .calmap{height:240px;margin:0 var(--s4);border-radius:var(--r2);overflow:hidden;background:var(--card-2);z-index:0}
   /* touch screens: Leaflet's 30 px zoom buttons are below the 44 px touch target; a mouse keeps them small */
-  @media (pointer: coarse){ #locMap .leaflet-bar a{width:44px;height:44px;line-height:44px;font-size:22px} }
+  @media (pointer: coarse){ :is(#locMap,#calMap) .leaflet-bar a{width:44px;height:44px;line-height:44px;font-size:22px} }
+  .calmapnote{padding:var(--s2) var(--s4) var(--s3);font-size:12.5px;color:var(--mut);border-bottom:1px solid var(--line)}
+  .calsw{flex:none;width:10px;height:10px;border-radius:50%;margin-right:var(--s3)}
+  .calcard .row.calrt{width:100%;text-align:left}
+  .calcard .row.calrt.sel{background:var(--acc-sf)}
+  .calcard .row.calrt.dim .rl,.calcard .row.calrt.dim .rv{opacity:.45}
+  :root[data-theme="dark"] :is(#locMap,#calMap) .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.9)}
   @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]) #locMap .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.9)}
+    :root:not([data-theme="light"]) :is(#locMap,#calMap) .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.9)}
   }
 
   /* A/C page */
@@ -2300,10 +2307,15 @@ function calDay(x, cy, cm){
     calStat(x.eff != null ? x.eff : '—', 'kWh/100km') + '</div>' +
     (x.regen > 0 && x.eff_hu != null ? '<div class="calnet">' + '≈' + x.regen + ' kWh back from regen · head unit shows ' +
       x.eff_hu + '</div>' : '');
-  (x.trips || []).forEach(t => {
-    h += '<div class="row"><span class="rl">' + t.from + (t.to !== t.from ? ' – ' + t.to : '') +
+  const rt = calRouteable(x);                        // drives that can have a route (location on)
+  if(rt.length) h += '<div class="calmap" id="calMap"></div><div class="calmapnote" id="calMapNote">Loading routes…</div>';
+  (x.trips || []).forEach((t, i) => {
+    const k = rt.indexOf(i), tag = k >= 0 ? 'button' : 'div';
+    h += '<' + tag + ' class="row' + (k >= 0 ? ' calrt" data-k="' + k : '') + '">' +
+      (k >= 0 ? '<span class="calsw" style="background:' + calColor(k) + '"></span>' : '') +
+      '<span class="rl">' + t.from + (t.to !== t.from ? ' – ' + t.to : '') +
       (t.min >= 1 ? '<small>' + t.min + ' min</small>' : '') + '</span>' +
-      '<span class="rv">' + t.km + ' km</span></div>';
+      '<span class="rv">' + t.km + ' km</span></' + tag + '>';
   });
   (x.charges || []).forEach(c => {
     h += '<div class="row"><span class="rl">Charged ' + c.at + ' · +' + c.kwh + ' kWh<small>' +
@@ -2331,7 +2343,8 @@ async function renderDist(){
     '<div class="calgrid" id="calG"><div class="note" style="margin:0">Loading…</div></div>';
   $('calP').onclick = () => { shiftMonth(-1); };
   $('calN').onclick = () => { shiftMonth(1); };
-  const d = await api('api/history?month=' + calMonth);
+  const [d] = await Promise.all([api('api/history?month=' + calMonth),
+                                 LOCV.d ? null : locFetch().catch(() => {})]);   // routes need api/location's since
   if(mine !== distSeq) return;                     // a newer render started while this was loading
   const g = $('calG');
   const lead = (new Date(cy, cm - 1, 1).getDay() + 6) % 7;   // Monday-first
@@ -2374,6 +2387,7 @@ async function renderDist(){
   const paint = () => {
     const x = d.days.find(v => v.d === calSel);
     $('calDay').innerHTML = x ? calDay(x, cy, cm) : '';
+    if(x) calRoutes(x);
   };
   paint();
   g.querySelectorAll('.calday.on, .calday.cg').forEach(b => b.onclick = () => {
@@ -2382,6 +2396,78 @@ async function renderDist(){
     b.classList.add('sel');
     paint();
   });
+}
+// ---- the day's routes on the Distance calendar (location on) ----
+// Each drive of the selected day is drawn in its own colour; tap a drive row to focus it, again for the
+// whole day. One /api/route per drive (outings are at least 20 min apart, so the padded ranges don't overlap).
+const CALV = {map: null, seq: 0, lines: [], all: null, sel: null};
+function calRouteable(x){
+  const d = locHasRoutes() ? LOCV.d : null;
+  if(!d) return [];
+  return (x.trips || []).map((t, i) => (t.start_ts && t.end_ts && t.end_ts >= d.since) ? i : -1).filter(i => i >= 0);
+}
+function locHasRoutes(){ const d = LOCV.d; return !!(d && d.enabled && d.since != null); }
+function calColor(k){
+  const cs = getComputedStyle(document.documentElement);
+  const pal = [cs.getPropertyValue('--acc').trim() || '#2d8f5f', cs.getPropertyValue('--blue').trim() || '#2f6fd6',
+               cs.getPropertyValue('--warn').trim() || '#c98a1b', 'oklch(0.58 0.15 305)', 'oklch(0.58 0.16 355)'];
+  return pal[k % pal.length];
+}
+async function calRoutes(x){
+  const box = $('calMap'), note = $('calMapNote');
+  if(!box) return;
+  const mine = ++CALV.seq, rt = calRouteable(x);
+  if(CALV.map){ try{ CALV.map.remove(); }catch(e){} CALV.map = null; }
+  CALV.lines = []; CALV.sel = null;
+  let res;
+  try{
+    [, res] = await Promise.all([needLeaflet(), Promise.all(rt.map(i =>
+      api('api/route?from=' + x.trips[i].start_ts + '&to=' + x.trips[i].end_ts)
+        .then(r => (r && r.points) || []).catch(() => [])))]);
+  }catch(e){ if(mine === CALV.seq && note){ box.remove(); note.textContent = 'Map unavailable'; } return; }
+  if(mine !== CALV.seq || !$('calMap')) return;     // another day was picked while this loaded
+  const got = res.filter(p => p.length >= 2).length;
+  if(!got){ box.remove(); note.textContent = 'No route was recorded for this day.'; return; }
+  CALV.map = L.map('calMap', {zoomControl: true, attributionControl: true, scrollWheelZoom: false});
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {maxZoom: 19, referrerPolicy: 'strict-origin-when-cross-origin', attribution: OSM_CREDIT}).addTo(CALV.map);
+  const all = [];
+  res.forEach((pts, k) => {
+    if(pts.length < 2){ CALV.lines.push(null); return; }
+    const line = pts.map(p => [p[0], p[1]]), col = calColor(k);
+    const g = L.featureGroup([
+      L.polyline(line, {interactive: false, color: col, weight: 7, opacity: .22, lineJoin: 'round', lineCap: 'round'}),
+      L.polyline(line, {interactive: false, color: col, weight: 3.5, opacity: .95, lineJoin: 'round', lineCap: 'round'}),
+      L.circleMarker(line[0], {interactive: false, radius: 5, weight: 2, color: '#fff', fillColor: col, fillOpacity: 1}),
+      L.circleMarker(line[line.length - 1], {interactive: false, radius: 5, weight: 2, color: col, fillColor: '#fff', fillOpacity: 1})
+    ]).addTo(CALV.map);
+    g.eachLayer(l => { l._base = {opacity: l.options.opacity, fillOpacity: l.options.fillOpacity}; });
+    CALV.lines.push(g); all.push(...line);
+  });
+  CALV.all = L.latLngBounds(all);
+  CALV.map.fitBounds(CALV.all.pad(0.12), {animate: false});
+  note.textContent = (rt.length > 1 ? 'Each drive in its own colour; tap one to focus it.' : 'Filled dot = start, ring = end.') +
+    (got < rt.length ? ' ' + (rt.length - got) + ' without a recorded route.' : '');
+  document.querySelectorAll('#calDay .calrt').forEach(b => b.onclick = () => { buzz(6); calFocus(Number(b.dataset.k)); });
+  setTimeout(() => { try{ CALV.map && CALV.map.invalidateSize(); }catch(e){} }, 360);
+}
+function calFocus(k){
+  if(!CALV.map) return;
+  if(!CALV.lines[k]){ toast('No route was recorded for this drive.'); return; }
+  CALV.sel = CALV.sel === k ? null : k;
+  CALV.lines.forEach((g, j) => {
+    if(!g) return;
+    const on = CALV.sel == null || CALV.sel === j;
+    g.eachLayer(l => l.setStyle({opacity: on ? l._base.opacity : .12,
+                                 fillOpacity: on ? l._base.fillOpacity : .12}));
+    if(CALV.sel === j) g.bringToFront();
+  });
+  document.querySelectorAll('#calDay .calrt').forEach(b => {
+    const j = Number(b.dataset.k);
+    b.classList.toggle('sel', CALV.sel === j); b.classList.toggle('dim', CALV.sel != null && CALV.sel !== j);
+  });
+  const b = CALV.sel == null ? CALV.all : CALV.lines[CALV.sel].getBounds();
+  CALV.map.fitBounds(b.pad(0.12), {animate: false});
 }
 function shiftMonth(dir){
   const [y, m] = calMonth.split('-').map(Number);
@@ -2454,7 +2540,13 @@ function locOutings(){
   const d = LOCV.d || {};
   if(d.since == null) return [];
   return ((S && S.outings) || []).filter(o => o.start_ts && o.end_ts >= d.since)
-    .sort((a, b) => b.start_ts - a.start_ts).slice(0, 15);
+    .sort((a, b) => b.start_ts - a.start_ts).slice(0, 1);    // the last trip; older ones live on the Distance calendar
+}
+// One page at a time: swap this page for another without stacking them (back still goes Home).
+function swapPage(k){
+  if(openKey){ $(PAGES[openKey][0]).classList.remove('open'); openKey = null; }
+  openPage(k, true);
+  history.replaceState({page: k}, '', '#' + k);
 }
 function locShowCar(reset){
   if(reset) LOCV.route = null;
@@ -2498,18 +2590,22 @@ async function renderLoc(){
     '<div class="locbtns"><a class="bigbtn" id="locNav" rel="noopener">Navigate</a>' +
     '<button class="bigbtn alt" id="locShare">' + (navigator.share ? 'Share location' : 'Copy location') + '</button></div>' +
     '<button class="bigbtn alt" id="locBack" hidden>Back to the car</button>' +
-    '<div class="lochead">Recent trips</div>' +
-    (outs.length ? '<div class="rowcard">' + outs.map((o, i) =>
+    '<div class="lochead">Routes</div><div class="rowcard">' +
+    (outs.length ? outs.map((o, i) =>
       '<button class="row" data-oi="' + i + '"><span class="ri">' + icon('car') + '</span>' +
-      '<span class="rl">' + o.day + '<small>' + o.from + (o.to !== o.from ? '–' + o.to : '') +
-      (o.avg_kmh != null ? ' · avg ' + o.avg_kmh + ' km/h' : '') + '</small></span>' +
-      '<span class="rv">' + o.km + ' km</span>' + CHEV + '</button>').join('') + '</div>'
-    : '<div class="note" style="margin-top:0">' + (d.since == null ? 'No positions recorded yet — routes appear after the next drive.'
-                                                                  : 'No trips with a recorded route yet.') + '</div>') +
-    '<div class="note">Position from CarLinko’s cloud, read by the logger while you drive. Tap a trip to see its route.</div>';
+      '<span class="rl">Last trip<small>' + o.day + ' · ' + o.from + (o.to !== o.from ? '–' + o.to : '') + '</small></span>' +
+      '<span class="rv">' + o.km + ' km</span>' + CHEV + '</button>').join('')
+    : '<div class="row"><span class="ri">' + icon('car') + '</span><span class="rl">' +
+      (d.since == null ? 'No positions recorded yet<small>Routes appear after the next drive.</small>'
+                       : 'No recent trip with a route') + '</span></div>') +
+    '<button class="row" id="locDays"><span class="ri">' + icon('pin') + '</span>' +
+    '<span class="rl">Trips by day<small>The calendar on Distance shows each day’s routes</small></span>' + CHEV + '</button>' +
+    '</div>' +
+    '<div class="note">Position from CarLinko’s cloud, read by the logger while you drive.</div>';
   $('locShare').onclick = locShare;
   $('locBack').onclick = () => locShowCar(true);
   el.querySelectorAll('[data-oi]').forEach(b => b.onclick = () => { buzz(6); locRoute(outs[Number(b.dataset.oi)]); });
+  $('locDays').onclick = () => { buzz(6); swapPage('dist'); };
   locShowCar(false);
   try{ await needLeaflet(); }catch(e){ $('locMap').innerHTML = '<div class="note" style="padding:16px;margin:0">Map unavailable</div>'; return; }
   if(!$('locMap')) return;                          // the page was re-rendered while Leaflet loaded

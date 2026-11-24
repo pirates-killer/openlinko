@@ -119,8 +119,8 @@ and one screen per part of it. The classic interface is still at `/index.html` (
   unit, installed from the dashboard over the local network. See [Head unit add-on](#head-unit-add-on-climate-gesture).
 - **BEV and PHEV** — fuel level, fuel range and fuel consumption on PHEVs.
 - **Find my car (opt-in)** — where the car is parked, a Navigate button for your phone's maps app,
-  and the route of each trip, from CarLinko's cached position. Off by default; works where the cloud
-  has a position (Tiggo 7 CSH, Malaysia; not the J5 in Indonesia). See [docs/LOCATION.md](docs/LOCATION.md).
+  and the route of each trip, for any day on the calendar, from CarLinko's cached position. Off by
+  default; works where the cloud has a position (Tiggo 7 CSH, Malaysia; not the J5 in Indonesia). See [docs/LOCATION.md](docs/LOCATION.md).
 - **Home Assistant** — read it over REST sensors with battery-low / charge-done notifications
   ([docs/HOMEASSISTANT.md](docs/HOMEASSISTANT.md)). For a native integration see [Related projects](#related-projects).
 - **Extras (optional, need a Google Maps key)** — long-trip charge planner and SPKLU charger map.

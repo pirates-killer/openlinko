@@ -51,9 +51,16 @@ Settings are read when the logger starts. Restart it after a change.
   age, Navigate and Share. Tap a trip to draw its route. A fix read while moving that is more than
   5 minutes old shows only *last seen …*, not *moving*, in case the stop fix never landed.
 - **v2** (`/`): a *Location* row on Home and a **Location** page with the map, Navigate, Share,
-  *Recent trips* (tap one for its route) and *Back to the car*. `/#loc` opens the page directly.
-  The row reads *Moving · 1 min ago* or *Parked · 3 d ago*; an old moving fix reads *Last seen 3 d ago*.
-  Routes longer than 2,000 points (multi-day outings only) are thinned evenly.
+  the *Last trip* (tap for its route), *Back to the car*, and *Trips by day*, which opens the
+  calendar on Distance. `/#loc` opens the page directly. The row reads *Moving · 1 min ago* or
+  *Parked · 3 d ago*; an old moving fix reads *Last seen 3 d ago*.
+- **Any day's routes, from the calendar.** Pick a day on the Distance calendar (v2), or on the
+  classic page's calendar view: every drive of that day with a recorded route gets its own colour.
+  In v2 the day card shows them on a map, and tapping a drive focuses it (tap again for the whole
+  day). In classic the day sheet lists the drives; tap one for its route, or *Show this day's
+  routes* for all of them, on the *Find my car* map. Days from before the first stored position
+  have no map.
+- Routes longer than 2,000 points (multi-day outings only) are thinned evenly.
 - **Navigate** opens the device's own chooser: `geo:` on Android (any installed maps app), Apple
   Maps on iPhone and iPad, Google Maps directions on a desktop.
 - **Share location** uses the system share sheet where there is one (coordinates plus a Google Maps

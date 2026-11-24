@@ -279,6 +279,16 @@
   .sheet .note{font-size:12.5px;color:var(--muted);line-height:1.6;margin-top:16px;
     background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
   .sheet .note b{color:var(--ink);font-weight:700}
+  /* a calendar day's drives (location on: each opens its route on Find my car) */
+  .sheet .sdrives{margin-top:14px}
+  .sheet .sdh{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
+  .sheet button.row{width:100%;font:inherit;font-size:14px;color:var(--ink);background:none;border:0;
+    border-bottom:1px solid var(--hair);text-align:left;cursor:pointer;min-height:44px;align-items:center}
+  .sheet button.row:last-child{border-bottom:0}
+  .sheet .row .sw{flex:none;width:10px;height:10px;border-radius:50%;margin-right:-4px}
+  .sheet .row .rt{flex:1}
+  .sheet .sday{width:100%;min-height:44px;margin-top:12px;border:1px solid var(--line);border-radius:12px;
+    font:inherit;font-size:13px;font-weight:700;color:var(--ink);background:var(--surface);cursor:pointer}
 
   /* slot-text (vendored) — rolling-digit animation for live numbers */
   .slot-text{display:inline-flex;white-space:pre}
@@ -1028,7 +1038,7 @@ function renderCal(d){ const [y,m]=d.month.split('-').map(Number);
     e.append(cd,ck);
     if(x.km){ const p=0.08+0.62*(x.km/max); e.style.background='color-mix(in oklch, var(--accent) '+Math.round(p*100)+'%, transparent)'; }
     if(x.chg_kwh>0){ const dot=document.createElement('i'); dot.className='cdot'; e.append(dot); }
-    if(x.km||x.chg_kwh) e.addEventListener('click',()=>sheet(bCalDay(x,d.month)));
+    if(x.km||x.chg_kwh) e.addEventListener('click',()=>openCalDay(x,d.month));
     g.append(e); });
 }
 function bCalDay(x,month){ const [y,m]=month.split('-').map(Number);
@@ -1043,6 +1053,30 @@ function bCalDay(x,month){ const [y,m]=month.split('-').map(Number);
       cost!=null?[tn('Cost (est.)','Biaya (estimasi)'), rp(cost)]:null,
       x.chg_kwh?[tn('Charged','Diisi'), x.chg_kwh+' kWh · '+money(x.chg_cost)]:null],
     note: x.km&&!measured? tn('SoC too coarse to measure this short a day.','SoC terlalu kasar untuk hari sependek ini.'):null };
+}
+// A calendar day's sheet: the breakdown above, then the day's drives. With location on, each drive opens
+// its route on the Find my car card (Trips tab), and "Show this day's routes" draws them all, one colour each.
+const DAY_COLORS=['#2d8f5f','#2563eb','#d97706','#8b5cf6','#db2777'];
+function calRouteable(x){ return (x.trips||[]).map((t,i)=>(_fcOn&&_fcSince!=null&&t.start_ts&&t.end_ts&&t.end_ts>=_fcSince)?i:-1).filter(i=>i>=0); }
+function openCalDay(x,month){
+  const o=bCalDay(x,month), trips=x.trips||[], rt=calRouteable(x);
+  const [y,m]=month.split('-').map(Number);
+  const day=new Date(y,m-1,x.d).toLocaleDateString(lang==='id'?'id-ID':'en-US',{weekday:'short',day:'numeric',month:'short'});
+  let h=`<h3>${o.title}</h3>`+(o.lead?`<div class="lead">${o.lead}</div>`:'')+srows(o.rows);
+  if(trips.length){
+    h+=`<div class="sdrives"><div class="sdh">${tn('Drives','Perjalanan')}</div>`+trips.map((t,i)=>{ const k=rt.indexOf(i),
+      txt=`<span class="rt">${t.from}${t.to!==t.from?' – '+t.to:''}${t.min>=1?' · '+t.min+' min':''}</span><b>${fmt(t.km)} km</b>`;
+      return k>=0?`<button class="row" type="button" data-ti="${i}"><i class="sw" style="background:${DAY_COLORS[k%DAY_COLORS.length]}"></i>${txt}</button>`
+                 :`<div class="row">${txt}</div>`; }).join('')+'</div>';
+    if(rt.length>1) h+=`<button class="sday" type="button" id="sDay">${tn("Show this day's routes",'Tampilkan rute hari ini')}</button>`;
+  }
+  if(o.note) h+=`<div class="note">${o.note}</div>`;
+  sheet({html:h});
+  $('sheetBody').querySelectorAll('[data-ti]').forEach(b=>b.addEventListener('click',()=>{
+    const t=trips[Number(b.dataset.ti)]; closeSheet(); showTab('trips');
+    setTimeout(()=>fcShowRoute(Object.assign({day},t)),120); }));
+  const sd=$('sDay'); if(sd) sd.addEventListener('click',()=>{ closeSheet(); showTab('trips');
+    setTimeout(()=>fcShowDay(rt.map(i=>trips[i]),day),120); });
 }
 $('themeSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; theme=b.dataset.v; try{localStorage.setItem('theme',theme)}catch(e){} applyTheme(); syncSeg(); buzz(8); });
 $('langSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; lang=b.dataset.v; try{localStorage.setItem('lang',lang)}catch(e){} applyLang(); syncSeg(); buzz(8); load(false); });
@@ -1255,6 +1289,26 @@ async function fcShowRoute(t){
   setTimeout(()=>{ try{_fcMap.invalidateSize();}catch(e){} },140);
   const b=$('fcBack'); b.textContent=T('Back to the car'); b.style.display=_fcPos?'':'none';
   $('fcCap').textContent=T('Route')+' · '+t.day+' · '+t.from+(t.to!==t.from?'–'+t.to:'')+' · '+t.km+' km';
+  sec.scrollIntoView({behavior:'smooth',block:'center'});
+}
+async function fcShowDay(trips,day){
+  const sec=$('findCar');
+  const res=await Promise.all(trips.map(t=>fetch('api/route?from='+t.start_ts+'&to='+t.end_ts,{cache:'no-store'})
+    .then(r=>r.json()).then(j=>(j&&j.points)||[]).catch(()=>[])));
+  if(!res.some(p=>p.length>=2)||!fcInit()){ $('fcCap').textContent=T('No route was recorded for this trip.'); sec.scrollIntoView({behavior:'smooth',block:'center'}); return; }
+  _fcRoute=true; _fcLayer.clearLayers();
+  const all=[]; let km=0;
+  res.forEach((pts,k)=>{ km+=trips[k].km||0; if(pts.length<2) return;
+    const line=pts.map(p=>[p[0],p[1]]), col=DAY_COLORS[k%DAY_COLORS.length];
+    L.polyline(line,{interactive:false,color:col,weight:7,opacity:.22,lineJoin:'round',lineCap:'round'}).addTo(_fcLayer);
+    L.polyline(line,{interactive:false,color:col,weight:3.5,opacity:.95,lineJoin:'round',lineCap:'round'}).addTo(_fcLayer);
+    L.circleMarker(line[0],{interactive:false,radius:5,weight:2,color:'#fff',fillColor:col,fillOpacity:1}).addTo(_fcLayer);
+    L.circleMarker(line[line.length-1],{interactive:false,radius:5,weight:2,color:col,fillColor:'#fff',fillOpacity:1}).addTo(_fcLayer);
+    all.push(...line); });
+  _fcMap.fitBounds(L.latLngBounds(all).pad(0.12),{animate:false});
+  setTimeout(()=>{ try{_fcMap.invalidateSize();}catch(e){} },140);
+  const b=$('fcBack'); b.textContent=T('Back to the car'); b.style.display=_fcPos?'':'none';
+  $('fcCap').textContent=tn('Routes','Rute')+' · '+day+' · '+trips.length+' '+tn('drives','perjalanan')+' · '+fmt(Math.round(km*10)/10)+' km';
   sec.scrollIntoView({behavior:'smooth',block:'center'});
 }
 { const fb=$('fcBack'); if(fb) fb.addEventListener('click',()=>fcShowCar()); }

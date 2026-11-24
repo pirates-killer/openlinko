@@ -242,6 +242,9 @@ on in demo mode and never call CarLinko themselves. Both need a session when the
   car has one of its own. Its routes stay available.
 
 `GET /api/route?from=<ts>&to=<ts>`: the fixes for one outing, `{"points": [[lat, lng, ts], ...]}`.
+Any window up to 3 days works; the UIs ask for one outing at a time. Each drive in `/api/history`'s
+`days[].trips` carries its `start_ts` and `end_ts` (unix seconds) for this, so a calendar day can draw
+its routes. Those two fields are there with location off too; they are plain trip times.
 
 - The range is padded by 300 s on each side, to pick up the fix read as the car stopped.
 - At most 3 days. A route of more than 2000 points is thinned evenly, first and last point kept.

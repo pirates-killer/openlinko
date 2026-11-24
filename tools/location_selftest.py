@@ -282,6 +282,28 @@ class ServerTest(ServerHarness):
         _, loc = self.get("/api/location")
         self.assertEqual(loc["lat"], 3.139)
 
+    def test_calendar_drives_carry_the_times_a_route_needs(self):
+        # /api/history's per-day drives get start_ts/end_ts, so a calendar day can open each drive's route.
+        t0 = int(time.mktime((2026, 3, 10, 8, 0, 0, 0, 0, -1)))
+        legs = [{"start_ts": t0, "end_ts": t0 + 900, "km": 12},
+                {"start_ts": t0 + 1000, "end_ts": t0 + 1800, "km": 9},           # parked < 20 min: same outing
+                {"start_ts": t0 + 9000, "end_ts": t0 + 9600, "km": 7}]           # a second outing
+        conn = sqlite3.connect(server.DB)
+        conn.execute("INSERT INTO telemetry(ts, dt, online, raw) VALUES (?, ?, 1, 'x')",
+                     (t0, time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t0))))
+        conn.commit(); conn.close()
+        with patch.object(server, "decode_cached", return_value={}), \
+                patch.object(server, "build_trips", return_value=legs), \
+                patch.object(server, "day_energy", return_value={}), \
+                patch.object(server, "day_regen", return_value={}), \
+                patch.object(server, "day_regen_kw", return_value={}), \
+                patch.object(server, "build_sessions", return_value=[]):
+            h = server.month_history("2026-03")
+        drives = h["days"][9]["trips"]
+        self.assertEqual([(d["start_ts"], d["end_ts"], d["km"]) for d in drives],
+                         [(t0, t0 + 1800, 21), (t0 + 9000, t0 + 9600, 7)])
+        self.assertEqual(set(drives[0]), {"from", "to", "km", "min", "start_ts", "end_ts"})
+
     def test_a_long_route_is_thinned_evenly_keeping_both_ends(self):
         self.creds(location=True)
         t = self.now - 5 * 86400
